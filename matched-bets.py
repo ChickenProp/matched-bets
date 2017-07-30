@@ -39,8 +39,14 @@ br_row = """\
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--lay-commission', '-c', type=Decimal,
+                        default=Decimal('0.02'))
     parser.add_argument('stake', type=Decimal)
     parser.add_argument('odds', nargs='+', type=Decimal)
+
+    bet_type = parser.add_mutually_exclusive_group()
+    bet_type.add_argument('--free', '-f', action='store_true')
+    bet_type.add_argument('--qual', '-q', action='store_true')
 
     args = parser.parse_args()
 
@@ -49,23 +55,26 @@ def main():
 
     odds_pairs = zip(args.odds[:mid], args.odds[mid:])
 
+    bet_getter = get_free_bet
+    if args.qual:
+        bet_getter = get_qualifying_bet
+
     print(br_header)
     for o1, o2 in odds_pairs:
-        fb = get_free_bet(args.stake, o1, o2,
-                          Decimal('0'), Decimal('0.05'))
+        fb = bet_getter(args.stake, o1, o2, Decimal('0'), args.lay_commission)
         print(br_format.format(**fb._asdict()))
 
 def get_free_bet(back_stake, back_odds, lay_odds, back_comm, lay_comm,
                  round_lay_stake=True):
     bwbr = back_stake * (back_odds - 1) * (1 - back_comm)
     lwbr = 0
+    bwlr_ls = 1 - lay_odds
+    lwlr_ls = 1 - lay_comm
 
-    lay_stake = bwbr / ((lay_odds - 1) + (1 - lay_comm))
-    if round_lay_stake:
-        lay_stake = lay_stake.quantize(Decimal('0.01'))
+    lay_stake = optimal_lay_stake(bwbr, bwlr_ls, lwbr, lwlr_ls, round_lay_stake)
 
-    bwlr = -lay_stake * (lay_odds - 1)
-    lwlr = lay_stake * (1 - lay_comm)
+    bwlr = lay_stake * bwlr_ls
+    lwlr = lay_stake * lwlr_ls
 
     return BetReturn(
         back_stake=back_stake,
@@ -83,6 +92,48 @@ def get_free_bet(back_stake, back_odds, lay_odds, back_comm, lay_comm,
         lay_win_lay_return = lwlr,
         lay_win_total_return = lwbr + lwlr
     )
+
+def get_qualifying_bet(back_stake, back_odds, lay_odds, back_comm, lay_comm,
+                       round_lay_stake=True):
+    bwbr = back_stake * (back_odds - 1) * (1 - back_comm)
+    lwbr = -back_stake
+    bwlr_ls = 1 - lay_odds
+    lwlr_ls = 1 - lay_comm
+
+    lay_stake = optimal_lay_stake(bwbr, bwlr_ls, lwbr, lwlr_ls, round_lay_stake)
+
+    bwlr = lay_stake * bwlr_ls
+    lwlr = lay_stake * lwlr_ls
+
+    return BetReturn(
+        back_stake=back_stake,
+        lay_stake=lay_stake,
+        back_odds=back_odds,
+        lay_odds=lay_odds,
+        back_comm=back_comm,
+        lay_comm=lay_comm,
+
+        back_win_back_return = bwbr,
+        back_win_lay_return = bwlr,
+        back_win_total_return = bwbr + bwlr,
+
+        lay_win_back_return = lwbr,
+        lay_win_lay_return = lwlr,
+        lay_win_total_return = lwbr + lwlr
+    )
+
+def optimal_lay_stake(bwbr, bwlr_ls, lwbr, lwlr_ls, round=True):
+    """Get the optimal lay stake.
+
+    bwbr: back-win-back-return
+    bwlr_ls: back-win-lay-return / lay_stake
+    lwbr: lay-win-back-return
+    lwlr_ls: lay-win-lay-return / lay_stake"""
+
+    lay_stake =  (lwbr - bwbr) / (bwlr_ls - lwlr_ls)
+    if round:
+        lay_stake = lay_stake.quantize(Decimal('0.01'))
+    return lay_stake
 
 if __name__ == '__main__':
     main()
