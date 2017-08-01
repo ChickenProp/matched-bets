@@ -4,38 +4,103 @@ import argparse
 from decimal import Decimal
 from collections import namedtuple
 
-BetReturn = namedtuple('BetReturn',
-                       '''back_stake lay_stake
-                          back_odds lay_odds
-                          back_comm lay_comm
-                          back_win_back_return back_win_lay_return
-                          back_win_total_return
-                          lay_win_back_return lay_win_lay_return
-                          lay_win_total_return
-                       '''.split())
+class Bet(object):
+    def bwbr(self):
+        return self.back_stake * (self.back_odds - 1) * (1 - self.back_comm)
+    def lwbr(self):
+        return -self.back_stake
+    def bwlr_ls(self):
+        return 1 - self.lay_odds
+    def lwlr_ls(self):
+        return 1 - self.lay_comm
 
-br_header = """\
-  B odds  L odds   B stk   L stk  L liab  B rtrn  L rtrn     P/L  (B win)
-                                                                  (L win)
-"""
+    def bwlr(self):
+        return self.lay_stake * self.bwlr_ls()
+    def lwlr(self):
+        return self.lay_stake * self.lwlr_ls()
 
-br_top_row = '''back_odds lay_odds back_stake lay_stake back_win_lay_return
-                back_win_back_return back_win_lay_return
-                back_win_total_return'''.split()
-br_bottom_row = '''lay_win_back_return lay_win_lay_return
-                   lay_win_total_return'''.split()
+    def optimal_lay_stake(self, round=True):
+        """Get the optimal lay stake."""
 
-br_top_format = ''.join('{%s:>8.2f}' % (k,) for k in br_top_row)
-br_bottom_format = ''.join('{%s:>8.2f}' % (k,) for k in br_bottom_row)
-br_format = '%s\n%s%s' % (br_top_format, ' ' * 40, br_bottom_format)
+        lay_stake = ((self.lwbr() - self.bwbr())
+                     / (self.bwlr_ls() - self.lwlr_ls()))
+        if round:
+            lay_stake = lay_stake.quantize(Decimal('0.01'))
+        return lay_stake
 
-br_row = """\
-{back_odds:>8.2f}{lay_odds:>8.2f}
-{back_odds:>8.2f}{lay_odds:>8.2f}
-{back_odds:>8.2f}{lay_odds:>8.2f}
-{back_odds:>8.2f}{lay_odds:>8.2f}
+    @classmethod
+    def get_with_optimal_lay_stake(cls, back_stake, back_odds, lay_odds,
+                                   back_comm, lay_comm):
+        b = cls()
+        b.back_stake = back_stake
+        b.back_odds = back_odds
+        b.lay_odds = lay_odds
+        b.back_comm = back_comm
+        b.lay_comm = lay_comm
 
-"""
+        b.lay_stake = b.optimal_lay_stake()
+        return b
+
+    def _asdict(self):
+        return dict(
+            back_stake=self.back_stake,
+            lay_stake=self.lay_stake,
+            back_odds=self.back_odds,
+            lay_odds=self.lay_odds,
+            back_comm=self.back_comm,
+            lay_comm=self.lay_comm,
+
+            back_win_back_return = self.bwbr(),
+            back_win_lay_return = self.bwlr(),
+            back_win_total_return = self.bwbr() + self.bwlr(),
+
+            lay_win_back_return = self.lwbr(),
+            lay_win_lay_return = self.lwlr(),
+            lay_win_total_return = self.lwbr() + self.lwlr()
+        )
+
+    # Tuple (top row, bottom row). Each field is (header name, dict key); None
+    # gives a blank space.
+    format_fields = (
+        [ ('B odds', 'back_odds'),
+          ('L odds', 'lay_odds'),
+          ('B stk', 'back_stake'),
+          ('L stk', 'lay_stake'),
+          ('L liab', 'back_win_lay_return'),
+          ('B rtrn', 'back_win_back_return'),
+          ('L rtrn', 'back_win_lay_return'),
+          ('P/L', 'back_win_total_return'),
+          ('  (B win)', None) ], # Leading spaces to overflow %8s, looks nicer.
+        [ (None, None),
+          (None, None),
+          (None, None),
+          (None, None),
+          (None, None),
+          (None, 'lay_win_back_return'),
+          (None, 'lay_win_lay_return'),
+          (None, 'lay_win_total_return'),
+          ('  (L win)', None) ]
+    )
+
+    @classmethod
+    def format_header(cls):
+        def format_field(f):
+            return '%8s' % (f[0] or '',)
+        def format_row(r):
+            return ''.join(format_field(f) for f in r)
+        return '\n'.join(format_row(r) for r in cls.format_fields)
+
+    def format_row(self):
+        d = self._asdict()
+        def format_field(f):
+            return '%8.2f' % (d[f[1]],) if f[1] else ' ' * 8
+        def format_row(r):
+            return ''.join(format_field(f) for f in r)
+        return '\n'.join(format_row(r) for r in self.format_fields)
+
+class FreeBet(Bet):
+    def lwbr(self):
+        return 0
 
 def main():
     parser = argparse.ArgumentParser()
@@ -55,85 +120,17 @@ def main():
 
     odds_pairs = zip(args.odds[:mid], args.odds[mid:])
 
-    bet_getter = get_free_bet
+    bet_getter = FreeBet
     if args.qual:
-        bet_getter = get_qualifying_bet
+        bet_getter = Bet
 
-    print(br_header)
+    print(bet_getter.format_header())
+
     for o1, o2 in odds_pairs:
-        fb = bet_getter(args.stake, o1, o2, Decimal('0'), args.lay_commission)
-        print(br_format.format(**fb._asdict()))
-
-def get_free_bet(back_stake, back_odds, lay_odds, back_comm, lay_comm,
-                 round_lay_stake=True):
-    bwbr = back_stake * (back_odds - 1) * (1 - back_comm)
-    lwbr = 0
-    bwlr_ls = 1 - lay_odds
-    lwlr_ls = 1 - lay_comm
-
-    lay_stake = optimal_lay_stake(bwbr, bwlr_ls, lwbr, lwlr_ls, round_lay_stake)
-
-    bwlr = lay_stake * bwlr_ls
-    lwlr = lay_stake * lwlr_ls
-
-    return BetReturn(
-        back_stake=back_stake,
-        lay_stake=lay_stake,
-        back_odds=back_odds,
-        lay_odds=lay_odds,
-        back_comm=back_comm,
-        lay_comm=lay_comm,
-
-        back_win_back_return = bwbr,
-        back_win_lay_return = bwlr,
-        back_win_total_return = bwbr + bwlr,
-
-        lay_win_back_return = lwbr,
-        lay_win_lay_return = lwlr,
-        lay_win_total_return = lwbr + lwlr
-    )
-
-def get_qualifying_bet(back_stake, back_odds, lay_odds, back_comm, lay_comm,
-                       round_lay_stake=True):
-    bwbr = back_stake * (back_odds - 1) * (1 - back_comm)
-    lwbr = -back_stake
-    bwlr_ls = 1 - lay_odds
-    lwlr_ls = 1 - lay_comm
-
-    lay_stake = optimal_lay_stake(bwbr, bwlr_ls, lwbr, lwlr_ls, round_lay_stake)
-
-    bwlr = lay_stake * bwlr_ls
-    lwlr = lay_stake * lwlr_ls
-
-    return BetReturn(
-        back_stake=back_stake,
-        lay_stake=lay_stake,
-        back_odds=back_odds,
-        lay_odds=lay_odds,
-        back_comm=back_comm,
-        lay_comm=lay_comm,
-
-        back_win_back_return = bwbr,
-        back_win_lay_return = bwlr,
-        back_win_total_return = bwbr + bwlr,
-
-        lay_win_back_return = lwbr,
-        lay_win_lay_return = lwlr,
-        lay_win_total_return = lwbr + lwlr
-    )
-
-def optimal_lay_stake(bwbr, bwlr_ls, lwbr, lwlr_ls, round=True):
-    """Get the optimal lay stake.
-
-    bwbr: back-win-back-return
-    bwlr_ls: back-win-lay-return / lay_stake
-    lwbr: lay-win-back-return
-    lwlr_ls: lay-win-lay-return / lay_stake"""
-
-    lay_stake =  (lwbr - bwbr) / (bwlr_ls - lwlr_ls)
-    if round:
-        lay_stake = lay_stake.quantize(Decimal('0.01'))
-    return lay_stake
+        bet = bet_getter.get_with_optimal_lay_stake(args.stake, o1, o2,
+                                                    Decimal('0'),
+                                                    args.lay_commission)
+        print(bet.format_row())
 
 if __name__ == '__main__':
     main()
