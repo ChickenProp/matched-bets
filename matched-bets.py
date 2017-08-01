@@ -5,6 +5,8 @@ from decimal import Decimal
 from collections import namedtuple
 
 class Bet(object):
+    description = 'Qualifying bet (no unusual features)'
+
     def bwbr(self):
         return self.back_stake * (self.back_odds - 1) * (1 - self.back_comm)
     def lwbr(self):
@@ -99,13 +101,15 @@ class Bet(object):
         return '\n'.join(format_row(r) for r in self.format_fields)
 
 class FreeBet(Bet):
+    description = 'Free bet (stake not returned; no back liability)'
+
     def lwbr(self):
         return 0
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--lay-commission', '-c', type=Decimal,
-                        default=Decimal('0.02'))
+                        default=Decimal('2'))
     parser.add_argument('stake', type=Decimal)
     parser.add_argument('odds', nargs='+', type=Decimal)
 
@@ -124,12 +128,17 @@ def main():
     if args.qual:
         bet_getter = Bet
 
+    lay_commission = args.lay_commission / 100
+
+    print(bet_getter.description)
+    print('%s%% lay commission' % (args.lay_commission,))
+
     print(bet_getter.format_header())
 
     for o1, o2 in odds_pairs:
         bet = bet_getter.get_with_optimal_lay_stake(args.stake, o1, o2,
                                                     Decimal('0'),
-                                                    args.lay_commission)
+                                                    lay_commission)
         print(bet.format_row())
 
 if __name__ == '__main__':
