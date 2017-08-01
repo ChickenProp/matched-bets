@@ -24,6 +24,19 @@ class Bet(object):
     def optimal_lay_stake(self, round=True):
         """Get the optimal lay stake."""
 
+        # Return from the bet is
+        # if back wins: bwbr + bwlr (back-win-back-return, back-win-lay-return)
+        # if lay wins: lwbr + lwlr (lay-win-back-return, lay-win-lay-return)
+        # By definition, optimal lay stake is the one that makes these equal.
+        # So to get lay stake:
+        #
+        #   bwbr + bwlr = lwbr + lwlr
+        #   bwbr + ls*(bwlr/ls) = lwbr + ls*(lwlr/ls)
+        #   ls(bwlr/ls - lwlr/ls) = lwbr - bwbr
+        #   ls = (lwbr - bwbr) / (bwlr/ls - lwlr/ls)
+        #
+        # Where bwbr, bwlr/ls, lwbr and lwlr/ls are all methods.
+
         lay_stake = ((self.lwbr() - self.bwbr())
                      / (self.bwlr_ls() - self.lwlr_ls()))
         if round:
@@ -143,35 +156,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-# arithmetic:
-
-# free bet
-# if back wins:
-#     on back: back_stake * (back_odds - 1) * (1 - back_comm)
-#     on lay: - lay_stake * (lay_odds - 1)
-# if lay wins:
-#     on back: 0
-#     on lay: lay_stake * (1 - lay_comm)
-
-# (bs * bo-1 * 1-bc) - (ls * lo-1) = ls * 1-lc
-# (bs * bo-1 * 1-bc) = ls * (lo-1 + 1-lc)
-# ls = (bs * bo-1 * 1-bc) / (lo-1 + 1-lc)
-
-# qualifier
-# if back wins:
-#     on back: back_stake * (back_odds - 1) * (1 - back_comm)
-#     on lay: - lay_stake * (lay_odds - 1)
-# if lay wins:
-#     on back: - back_stake
-#     on lay: lay_stake * (1 - lay_comm)
-
-# (bs * bo-1 * 1-bc) - (ls * lo-1) = ls * 1-lc - bs
-# (bs * bo-1 * 1-bc + bs) = ls * (lo-1 + 1-lc)
-# ls = (bs * bo-1 * 1-bc + bs) / (lo-1 + 1-lc)
-
-# in general
-#   bwbr + ls*(bwlr/ls) = lwbr + ls*(lwlr/ls)
-#   ls(bwlr/ls - lwlr/ls) = lwbr - bwbr
-#   ls = (lwbr - bwbr) / (bwlr/ls - lwlr/ls)
-# so if bwlr/ls and lwlr/ls are known, we can get ls
