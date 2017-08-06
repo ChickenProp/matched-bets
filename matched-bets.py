@@ -21,6 +21,13 @@ class Bet(object):
     def lwlr(self):
         return self.lay_stake * self.lwlr_ls()
 
+    def average_return(self):
+        # This could be marginally more accurate if it took an average weighted
+        # by odds. But it's not clear exactly what to use for the odds
+        # (back/lay/some combination?) and as long as the lay stake is close to
+        # optimal, it will very rarely make a difference.
+        return (self.bwbr() + self.bwlr() + self.lwbr() + self.lwlr()) / 2
+
     def optimal_lay_stake(self, round=True):
         """Get the optimal lay stake."""
 
@@ -119,6 +126,43 @@ class FreeBet(Bet):
     def lwbr(self):
         return 0
 
+    def equal_return(self):
+        """Return a FreeBet with roughly the same average return, but no
+        back-lay spread."""
+
+        # We want to find a bet with equal return but no spread. The point is
+        # that for any bet with back odds lower than that bet, the return is
+        # also lower (unless the lay odds are below the back odds, in which case
+        # you can get money even without a free bet).
+        #
+        # For a free bet, return is just lwlr.
+        #   lwlr = ls * (1 - lc)
+        #        = (1-lc) * (lwbr - bwbr) / (bwlr/ls - lwlr/ls)
+        #        = - (1-lc) * bs * (bo - 1) * (1 - bc) / (lc - lo)
+        #
+        # Keeping lc, bs, bo constant, the variable term is
+        #   (bo - 1) / (lc - lo)
+        #
+        # So the no-spread odds bo' satisfy
+        #   (bo - 1) / (lc - lo)     = (bo' - 1) / (lc - bo')
+        #   (bo - 1)(lc - bo')       = (bo' - 1)(lc - lo)
+        #   bo'(1 - bo) + lc(bo - 1) = bo'(lc - lo) - (lc - lo)
+        #   bo'(1 - (bo - lo) - lc)  = lo - lc*bo
+        #   bo'                      = (lo - lc*bo) / (1 - (bo - lo) - lc)
+        #
+        # Let σ = lo - bo be the spread, and we have
+        #   bo' = (bo + σ - lc*bo) / (1 + σ - lc)
+        #       = bo * (1 - lc + σ/bo) / (1 + σ - lc)
+
+        spread = self.lay_odds - self.back_odds
+        new_bo = (self.back_odds
+                  * (1 - self.lay_comm + spread/self.back_odds)
+                  / (1 + spread - self.lay_comm))
+
+        return FreeBet.get_with_optimal_lay_stake(self.back_stake,
+                                                  new_bo, new_bo,
+                                                  self.back_comm, self.lay_comm)
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--lay-commission', '-c', type=Decimal,
@@ -148,11 +192,19 @@ def main():
 
     print(bet_getter.format_header())
 
+    bets = []
     for o1, o2 in odds_pairs:
         bet = bet_getter.get_with_optimal_lay_stake(args.stake, o1, o2,
                                                     Decimal('0'),
                                                     lay_commission)
         print(bet.format_row())
+        bets.append(bet)
+
+    if hasattr(bet_getter, 'equal_return'):
+        print('--- To beat with no spread ---')
+
+        best_bet = max(bets, key=lambda b: b.average_return())
+        print(best_bet.equal_return().format_row())
 
 if __name__ == '__main__':
     main()
