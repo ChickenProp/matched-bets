@@ -163,12 +163,22 @@ class FreeBet(Bet):
                                                   new_bo, new_bo,
                                                   self.back_comm, self.lay_comm)
 
+def parse_odds(o):
+    """Return an odds as Decimal, in decimal format.
+
+    o is a string, which can be in decimal or fractional form."""
+    if '/' in o:
+        num, den = o.split('/', 1)
+        return (Decimal(num) / Decimal(den)) + 1
+    else:
+        return Decimal(o)
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--lay-commission', '-c', type=Decimal,
                         default=Decimal('2'))
     parser.add_argument('stake', type=Decimal)
-    parser.add_argument('odds', nargs='+', type=Decimal)
+    parser.add_argument('odds', nargs='+', type=parse_odds)
 
     bet_type = parser.add_mutually_exclusive_group()
     bet_type.add_argument('--free', '-f', action='store_true')
