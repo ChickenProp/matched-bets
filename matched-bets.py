@@ -3,6 +3,19 @@
 import argparse
 from decimal import Decimal
 from collections import namedtuple
+import colorful
+
+def _colored_join(mid, cstrings):
+    """Equivalent of `mid.join(cstrings)`, but for `ColorfulString`s."""
+    def interleave():
+        # cstrings[0], mid, cstrings[1], mid, ...
+        for cs in cstrings:
+            yield cs
+            yield mid
+
+    # ColorfulString may not be meant to be called directly. But seems to work.
+    return sum(list(interleave())[:-1],
+               colorful.core.ColorfulString('', ''))
 
 class Bet(object):
     description = 'Qualifying bet (no unusual features)'
@@ -82,12 +95,13 @@ class Bet(object):
         )
 
     # Tuple (top row, bottom row). Each field is (header name, dict key); None
-    # gives a blank space.
+    # gives a blank space. (header, key, formatting func) is also allowed.
     format_fields = (
         [ ('B odds', 'back_odds'),
           ('L odds', 'lay_odds'),
           ('B stk', 'back_stake'),
-          ('L stk', 'lay_stake'),
+          ('L stk', 'lay_stake',
+               lambda t: colorful.bold(t)),
           ('L liab', 'back_win_lay_return'),
           ('B rtrn', 'back_win_back_return'),
           ('L rtrn', 'back_win_lay_return'),
@@ -107,18 +121,30 @@ class Bet(object):
     @classmethod
     def format_header(cls):
         def format_field(f):
-            return '%8s' % (f[0] or '',)
+            t = '%8s' % (f[0] or '',)
+            if len(f) > 2:
+                t = f[2](t)
+            return t
+
         def format_row(r):
-            return ''.join(format_field(f) for f in r)
-        return '\n'.join(format_row(r) for r in cls.format_fields)
+            return _colored_join('', (format_field(f) for f in r))
+
+        return _colored_join('\n', (format_row(r).rstrip()
+                                    for r in cls.format_fields))
 
     def format_row(self):
         d = self._asdict()
         def format_field(f):
-            return '%8.2f' % (d[f[1]],) if f[1] else ' ' * 8
+            t = '%8.2f' % (d[f[1]],) if f[1] else ' ' * 8
+            if len(f) > 2:
+                t = f[2](t)
+            return t
+
         def format_row(r):
-            return ''.join(format_field(f) for f in r)
-        return '\n'.join(format_row(r) for r in self.format_fields)
+            return _colored_join('', (format_field(f) for f in r))
+
+        return _colored_join('\n', (format_row(r).rstrip()
+                                    for r in self.format_fields))
 
 class FreeBet(Bet):
     description = 'Free bet (stake not returned; no back liability)'
@@ -207,13 +233,18 @@ def main():
         bet = bet_getter.get_with_optimal_lay_stake(args.stake, o1, o2,
                                                     Decimal('0'),
                                                     lay_commission)
-        print(bet.format_row())
         bets.append(bet)
+
+    best_bet = max(bets, key=lambda b: b.average_return())
+    for b in bets:
+        if b is best_bet:
+            fmt = colorful.black_on_white(b.format_row())
+        else:
+            fmt = b.format_row()
+        print(fmt)
 
     if hasattr(bet_getter, 'equal_return'):
         print('--- To beat with no spread ---')
-
-        best_bet = max(bets, key=lambda b: b.average_return())
         print(best_bet.equal_return().format_row())
 
 if __name__ == '__main__':
