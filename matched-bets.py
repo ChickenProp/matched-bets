@@ -146,12 +146,26 @@ class Bet(object):
         return _colored_join('\n', (format_row(r).rstrip()
                                     for r in self.format_fields))
 
+    equal_return_banner = "To beat with minimal back odds"
+    def equal_return(self):
+        """Return a Bet with roughly the same average return, but back odds of
+        1."""
+
+        new_spread = (((self.lay_odds - self.back_odds - self.lay_comm)
+                       / self.back_odds)
+                      + self.lay_comm)
+        one = Decimal('1')
+        return Bet.get_with_optimal_lay_stake(self.back_stake,
+                                              one, one + new_spread,
+                                              self.back_comm, self.lay_comm)
+
 class FreeBet(Bet):
     description = 'Free bet (stake not returned; no back liability)'
 
     def lwbr(self):
         return 0
 
+    equal_return_banner = "To beat with no spread"
     def equal_return(self):
         """Return a FreeBet with roughly the same average return, but no
         back-lay spread."""
@@ -244,7 +258,7 @@ def main():
         print(fmt)
 
     if hasattr(bet_getter, 'equal_return'):
-        print('--- To beat with no spread ---')
+        print('--- %s ---' % (bet_getter.equal_return_banner,))
         print(best_bet.equal_return().format_row())
 
 if __name__ == '__main__':
