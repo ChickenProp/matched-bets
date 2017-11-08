@@ -216,13 +216,19 @@ def parse_odds(o):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--lay-commission', '-c', type=Decimal,
-                        default=Decimal('2'))
-    parser.add_argument('stake', type=Decimal)
-    parser.add_argument('odds', nargs='+', type=parse_odds)
+                        default=Decimal('2'), metavar='LCOMM',
+                        help='Commission on the lay side, in %%. Default: 2')
+    parser.add_argument('stake', type=Decimal,
+                        help='Stake on the back side')
+    parser.add_argument('odds', nargs='+', type=parse_odds,
+                        help='Back and lay odds on pairs of bets, in order ' \
+                             '"B1 B2 B3 ... L1 L2 L3 ..."')
 
     bet_type = parser.add_mutually_exclusive_group()
-    bet_type.add_argument('--free', '-f', action='store_true')
-    bet_type.add_argument('--qual', '-q', action='store_true')
+    bet_type.add_argument('--free', '-f', action='store_true',
+                          help='Free bet (default)')
+    bet_type.add_argument('--qual', '-q', action='store_true',
+                          help='Qualifying bet')
 
     args = parser.parse_args()
 
